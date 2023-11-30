@@ -80,7 +80,7 @@ int main()
 		if (bytes != 0)
 			DisplayInfo(buffer, bytes);
 
-		::Sleep(200);
+		::Sleep(1000);
 	}
     CloseHandle(hDevice);
 }
