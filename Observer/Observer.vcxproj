@@ -109,14 +109,15 @@
     <ClInclude Include="src\AutoLock.h" />
     <ClInclude Include="src\FastMutex.h" />
     <ClInclude Include="src\List.h" />
-    <ClInclude Include="src\Globals.h" />
+    <ClInclude Include="src\ObserverContext.h" />
     <ClInclude Include="src\Observer.h" />
+    <ClInclude Include="src\ObserverRegistryManager.h" />
     <ClInclude Include="src\pch.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\FastMutex.cpp" />
     <ClCompile Include="src\List.cpp" />
     <ClCompile Include="src\Observer.cpp" />
+    <ClCompile Include="src\ObserverRegistryManager.cpp" />
     <ClCompile Include="src\pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>

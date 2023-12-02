@@ -2,17 +2,17 @@
 #include <ntddk.h>
 #include "List.h"
 #include "AutoLock.h"
-#include "../../Client/src/ObserverPublic.h"
+#include "../../Client/src/ObserverClientInfo.h"
 
-void List::init(ULONG _maxCount)
+void List::Init(ULONG _maxCount)
 {
 	InitializeListHead(&head);
 	maxCount = _maxCount;
 	count = 0;
-	lock.init();
+	lock.Init();
 }
 
-void List::addItem(LIST_ENTRY* item)
+void List::AddItem(LIST_ENTRY* item)
 {
 	AutoLock locker(lock);
 
@@ -25,7 +25,7 @@ void List::addItem(LIST_ENTRY* item)
 	count++;
 }
 
-LIST_ENTRY* List::removeItem()
+LIST_ENTRY* List::RemoveItem()
 {
 	AutoLock locker(lock);
 	auto item = RemoveHeadList(&head);

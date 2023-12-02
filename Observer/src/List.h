@@ -10,9 +10,9 @@ struct FullItem{
 
 class List final {
 public: 
-	void init(ULONG _maxCount);
-	void addItem(LIST_ENTRY* item);
-	LIST_ENTRY* removeItem();
+	void Init(ULONG _maxCount);
+	void AddItem(LIST_ENTRY* item);
+	LIST_ENTRY* RemoveItem();
 private:
 	LIST_ENTRY head;
 	ULONG count;

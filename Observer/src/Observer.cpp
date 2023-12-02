@@ -1,30 +1,25 @@
 #include "pch.h"
 #include "Observer.h"
-#include "Globals.h"
-#include "../../Client/src/ObserverPublic.h"
+#include "ObserverContext.h"
+#include "../../Client/src/ObserverClientInfo.h"
 
 NTSTATUS ObserverCreateClose(PDEVICE_OBJECT, PIRP Irp);
 void ObserverUnload(PDRIVER_OBJECT DriverObject);
 NTSTATUS ObserverRead(PDEVICE_OBJECT, PIRP Irp);
-NTSTATUS ObserverWrite(PDEVICE_OBJECT, PIRP Irp);
+NTSTATUS ObserverDeviceControl(PDEVICE_OBJECT, PIRP Irp);
+
 NTSTATUS CompleteIrp(PIRP Irp, NTSTATUS status, ULONG_PTR);
 NTSTATUS OnRegistryNotify(PVOID context, PVOID notifyClass, PVOID arg);
 
-Globals g_Globals;
+static ObserverContext observerContext;
 
 extern "C" NTSTATUS
 DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 {
 	UNREFERENCED_PARAMETER(RegistryPath);
 
-	DriverObject->DriverUnload = ObserverUnload;
-	DriverObject->MajorFunction[IRP_MJ_CREATE] = DriverObject->MajorFunction[IRP_MJ_CLOSE] =
-		ObserverCreateClose;
-	DriverObject->MajorFunction[IRP_MJ_READ] = ObserverRead;
-	DriverObject->MajorFunction[IRP_MJ_WRITE] = ObserverWrite;
-
-	UNICODE_STRING devName = RTL_CONSTANT_STRING(L"\\Device\\Observer");
-	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\Observer");
+	UNICODE_STRING devName = RTL_CONSTANT_STRING(ObserverDeviceName);
+	UNICODE_STRING symLink = RTL_CONSTANT_STRING(ObserverDeviceSymlink);
 
 	PDEVICE_OBJECT DeviceObject = nullptr;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -48,25 +43,39 @@ DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 		}
 		initStage = InitStage::LinkCreated;
 		UNICODE_STRING altitude = RTL_CONSTANT_STRING(L"7657.123");
-		status = CmRegisterCallbackEx(OnRegistryNotify, &altitude, DriverObject, nullptr, &g_Globals.RegCookie, nullptr);
+		status = CmRegisterCallbackEx(OnRegistryNotify, &altitude, DriverObject, nullptr, &observerContext.RegCookie, nullptr);
 		if (!NT_SUCCESS(status)) {
 			KdPrint((DRIVER_PREFIX "failed to set registry callback (0x%08X)\n", status));
 			break;
 		}
 		initStage = InitStage::CallbackRegistered;
 	} while (false);
+
 	if (!NT_SUCCESS(status)) {
 		switch (initStage) {
 		case InitStage::CallbackRegistered:
-			CmUnRegisterCallback(g_Globals.RegCookie);
+			CmUnRegisterCallback(observerContext.RegCookie);
+			[[fallthrough]];
 		case InitStage::LinkCreated:
 			IoDeleteSymbolicLink(&symLink);
+			[[fallthrough]];
 		case InitStage::DeviceCreated:
 			IoDeleteDevice(DeviceObject);
+			[[fallthrough]];
+		default: break;
 		}
 		return status;
 	}
-	g_Globals.list.init(10000); // TODO read this value from registry
+
+	DriverObject->DriverUnload = ObserverUnload;
+	DriverObject->MajorFunction[IRP_MJ_CREATE] = DriverObject->MajorFunction[IRP_MJ_CLOSE] =
+		ObserverCreateClose;
+	DriverObject->MajorFunction[IRP_MJ_READ] = ObserverRead;
+	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = ObserverDeviceControl;
+
+	observerContext.RegistryNotifications.Init(10000);
+	observerContext.RegistryManager.Init();
+
 	return status;
 }
 
@@ -86,13 +95,13 @@ NTSTATUS ObserverCreateClose(PDEVICE_OBJECT, PIRP Irp)
 void ObserverUnload(PDRIVER_OBJECT DriverObject)
 {
 	LIST_ENTRY* entry;
-	while ((entry = g_Globals.list.removeItem()) != nullptr)
+	while ((entry = observerContext.RegistryNotifications.RemoveItem()) != nullptr)
 		ExFreePool(CONTAINING_RECORD(entry, FullItem<ItemHeader>, Entry));
 
 	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\Observer");
+	CmUnRegisterCallback(observerContext.RegCookie);
 	IoDeleteSymbolicLink(&symLink);
 	IoDeleteDevice(DriverObject->DeviceObject);
-	CmUnRegisterCallback(g_Globals.RegCookie);
 }
 
 NTSTATUS ObserverRead(PDEVICE_OBJECT, PIRP Irp)
@@ -111,7 +120,7 @@ NTSTATUS ObserverRead(PDEVICE_OBJECT, PIRP Irp)
 		status = STATUS_INSUFFICIENT_RESOURCES;
 	else {
 		while (true) {
-			auto entry = g_Globals.list.removeItem();
+			auto entry = observerContext.RegistryNotifications.RemoveItem();
 			if (entry != nullptr) {
 				auto info = CONTAINING_RECORD(entry, FullItem<ItemHeader>, Entry);
 				auto size = info->Data.size;
@@ -122,7 +131,7 @@ NTSTATUS ObserverRead(PDEVICE_OBJECT, PIRP Irp)
 					bytes += size;
 					ExFreePool(info); 
 				} else {
-					g_Globals.list.addItem(entry);
+					observerContext.RegistryNotifications.RemoveItem();
 					break;
 				}
 			} else {
@@ -130,25 +139,17 @@ NTSTATUS ObserverRead(PDEVICE_OBJECT, PIRP Irp)
 			}
 		}
 	}
-	return CompleteIrp(Irp, status, len);
-}
-
-NTSTATUS ObserverWrite(PDEVICE_OBJECT, PIRP Irp)
-{
-	auto stack = IoGetCurrentIrpStackLocation(Irp);
-	auto len = stack->Parameters.Write.Length;
-
-	return CompleteIrp(Irp, STATUS_SUCCESS, len);
+	return CompleteIrp(Irp, status, bytes);
 }
 
 void OnRegistrySetValue(REG_POST_OPERATION_INFORMATION* notificationInfo, PCUNICODE_STRING keyName);
-void OnRegistryCreateDeleteKey(REG_POST_OPERATION_INFORMATION* notificationInfo, PCUNICODE_STRING keyName, bool create);
+void OnRegistryCreateKey(REG_POST_OPERATION_INFORMATION* notificationInfo, PCUNICODE_STRING keyName);
+void OnRegistryDeleteKey(REG_POST_OPERATION_INFORMATION* notificationInfo, PCUNICODE_STRING keyName);
 void OnRegistryDeleteValue(REG_POST_OPERATION_INFORMATION* notificationInfo, PCUNICODE_STRING keyName);
 
 NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2)
 {
 	UNREFERENCED_PARAMETER(context);
-	static const WCHAR possibleRoot[] = L"\\REGISTRY\\MACHINE";
 
 	REG_NOTIFY_CLASS notifyClass = (REG_NOTIFY_CLASS)(ULONG_PTR)arg1;
 	// check only RegNtPostCreateKeyEx, RegNtPostSetValueKey, RegNtPostDeleteKey, RegNtPostDeleteValueKey
@@ -161,20 +162,20 @@ NTSTATUS OnRegistryNotify(PVOID context, PVOID arg1, PVOID arg2)
 		auto notificationInfo = (REG_POST_OPERATION_INFORMATION*)arg2;
 		if (NT_SUCCESS(notificationInfo->Status)) {
 			PCUNICODE_STRING keyName;
-			if (NT_SUCCESS(CmCallbackGetKeyObjectIDEx(&g_Globals.RegCookie,
+			if (NT_SUCCESS(CmCallbackGetKeyObjectIDEx(&observerContext.RegCookie,
 				notificationInfo->Object, nullptr, &keyName, 0)) && 
-				wcsncmp(keyName->Buffer, possibleRoot, ARRAYSIZE(possibleRoot) - 1) == 0) {
+				observerContext.RegistryManager.Filter(notifyClass, keyName)) {
 
 				switch (notifyClass) {
 				case RegNtPostSetValueKey:
 					OnRegistrySetValue(notificationInfo, keyName);
 					break;
 				case RegNtPostCreateKeyEx:
-					OnRegistryCreateDeleteKey(notificationInfo, keyName, true);
+					OnRegistryCreateKey(notificationInfo, keyName);
 					break;
 				case RegNtPostDeleteKey:
 					// maybe I can't get keyName from Object here, in this case i should look into preInfo
-					OnRegistryCreateDeleteKey(notificationInfo, keyName, false);
+					OnRegistryDeleteKey(notificationInfo, keyName);
 					break;
 				case RegNtPostDeleteValueKey:
 					OnRegistryDeleteValue(notificationInfo, keyName);
@@ -220,22 +221,60 @@ void OnRegistrySetValue(REG_POST_OPERATION_INFORMATION* notificationInfo, PCUNIC
 		offset += valueNameLen;
 		data.dataOffset = offset;
 		memcpy((PUCHAR)&data + offset, preInfo->Data, valueSize);
-		g_Globals.list.addItem(&info->Entry);
+		observerContext.RegistryNotifications.AddItem(&info->Entry);
 	} else {
 		KdPrint((DRIVER_PREFIX"Failed to allocate memeory for registry set value\n"));
 	}
 }
 
-void OnRegistryCreateDeleteKey(REG_POST_OPERATION_INFORMATION* notificationInfo, PCUNICODE_STRING keyName, bool create)
+void OnRegistryCreateKey(REG_POST_OPERATION_INFORMATION* notificationInfo, PCUNICODE_STRING keyName)
 {
 	// can only compare key name in preinfo and result keyName
+	// key can already exist!
+	// relative offset is useless
+	auto preInfo = (REG_CREATE_KEY_INFORMATION*)notificationInfo->PreInformation;
+	NT_ASSERT(preInfo);
+	if (*(preInfo->Disposition) == REG_CREATED_NEW_KEY) {
+		USHORT keyNameLen = keyName->Length + sizeof(WCHAR);
+		USHORT relativeNameLen = preInfo->CompleteName->Length + sizeof(WCHAR);
+		USHORT size = sizeof(RegistryCreateKey) + keyNameLen + relativeNameLen;
+		auto info = (FullItem<RegistryCreateKey>*)(ExAllocatePool2(POOL_FLAG_PAGED, size + sizeof(LIST_ENTRY), DRIVER_TAG));
+		if (info) {
+			auto& data = info->Data;
+			KeQuerySystemTimePrecise(&data.time);
+			data.type = ItemType::RegistryCreateKey;
+			data.size = size;
+			data.processId = HandleToULong(PsGetCurrentProcessId());
+			data.threadId = HandleToULong(PsGetCurrentThreadId());
+			USHORT offset = sizeof(data);
+			data.keyNameOffset = offset;
+			wcsncpy_s((PWSTR)((PUCHAR)&data + offset), keyNameLen / sizeof(WCHAR), 
+				keyName->Buffer, keyName->Length / sizeof(WCHAR));
+			if (relativeNameLen > 1) {
+				offset += keyNameLen;
+				data.relativeNameOffset = offset;
+				wcsncpy_s((PWSTR)((PUCHAR)&data + offset), relativeNameLen / sizeof(WCHAR), 
+				preInfo->CompleteName->Buffer, preInfo->CompleteName->Length / sizeof(WCHAR));
+			} else {
+				data.relativeNameOffset = 0;
+			}
+			observerContext.RegistryNotifications.AddItem(&info->Entry);
+		} else {
+			KdPrint((DRIVER_PREFIX"Failed to allocate memeory for registry create value\n"));
+		}
+	}
+}
+
+void OnRegistryDeleteKey(REG_POST_OPERATION_INFORMATION* notificationInfo, PCUNICODE_STRING keyName)
+{
+	UNREFERENCED_PARAMETER(notificationInfo);
 	USHORT keyNameLen = keyName->Length + sizeof(WCHAR);
 	USHORT size = sizeof(RegistryCreateKey) + keyNameLen;
 	auto info = (FullItem<RegistryCreateKey>*)(ExAllocatePool2(POOL_FLAG_PAGED, size + sizeof(LIST_ENTRY), DRIVER_TAG));
 	if (info) {
 		auto& data = info->Data;
 		KeQuerySystemTimePrecise(&data.time);
-		data.type = create ? ItemType::RegistryCreateKey : ItemType::RegistryDeleteKey;
+		data.type = ItemType::RegistryDeleteKey;
 		data.size = size;
 		data.processId = HandleToULong(PsGetCurrentProcessId());
 		data.threadId = HandleToULong(PsGetCurrentThreadId());
@@ -243,10 +282,11 @@ void OnRegistryCreateDeleteKey(REG_POST_OPERATION_INFORMATION* notificationInfo,
 		data.keyNameOffset = offset;
 		wcsncpy_s((PWSTR)((PUCHAR)&data + offset), keyNameLen / sizeof(WCHAR), 
 			keyName->Buffer, keyName->Length / sizeof(WCHAR));
-		g_Globals.list.addItem(&info->Entry);
+		observerContext.RegistryNotifications.AddItem(&info->Entry);
 	} else {
 		KdPrint((DRIVER_PREFIX"Failed to allocate memeory for registry create value\n"));
 	}
+
 }
 
 void OnRegistryDeleteValue(REG_POST_OPERATION_INFORMATION* notificationInfo, PCUNICODE_STRING keyName)
@@ -275,8 +315,45 @@ void OnRegistryDeleteValue(REG_POST_OPERATION_INFORMATION* notificationInfo, PCU
 		data.valueNameOffset = offset;
 		wcsncpy_s((PWSTR)((PUCHAR)&data + offset), valueNameLen / sizeof(WCHAR), 
 			preInfo->ValueName->Buffer, preInfo->ValueName->Length / sizeof(WCHAR));
-		g_Globals.list.addItem(&info->Entry);
+		observerContext.RegistryNotifications.AddItem(&info->Entry);
 	} else {
 		KdPrint((DRIVER_PREFIX"Failed to allocate memeory for registry set value\n"));
 	}
+}
+
+NTSTATUS ObserverDeviceControl(PDEVICE_OBJECT, PIRP Irp)
+{
+	auto stack = IoGetCurrentIrpStackLocation(Irp);
+	auto status = STATUS_INVALID_DEVICE_REQUEST;
+	auto code = stack->Parameters.DeviceIoControl.IoControlCode;
+
+	switch (code) {
+	case IOCTL_OBSERVER_ADD_FILTER: {
+		auto clientFilter = (ClientRegistryFilter*)Irp->AssociatedIrp.SystemBuffer;
+		auto len = stack->Parameters.DeviceIoControl.InputBufferLength;
+		auto clientFilterSize = sizeof(ClientRegistryFilter) + clientFilter->rootKeyNameSizeInBytes;
+		if (clientFilter == nullptr || len != clientFilterSize) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+		status = observerContext.RegistryManager.AddFilter(clientFilter);
+		break;
+	}
+	case IOCTL_OBSERVER_REMOVE_FILTER: {
+		auto filterName = (PCWSTR)Irp->AssociatedIrp.SystemBuffer;
+		auto len = stack->Parameters.DeviceIoControl.InputBufferLength;
+		if (filterName == nullptr || len == 0) {
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+		auto removed = observerContext.RegistryManager.RemoveFilter(filterName);
+		status = removed ? STATUS_SUCCESS : STATUS_NOT_FOUND;
+		break;
+	}
+	case IOCTL_OBSERVER_REMOVE_ALL_FILTERS:
+		observerContext.RegistryManager.RemoveAllFilters();
+		status = STATUS_SUCCESS;
+		break;
+	}
+	return CompleteIrp(Irp, status);
 }

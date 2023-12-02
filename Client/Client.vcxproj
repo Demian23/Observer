@@ -141,7 +141,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\ObserverPublic.h" />
+    <ClInclude Include="src\ObserverClientInfo.h" />
     <ClInclude Include="src\pch.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

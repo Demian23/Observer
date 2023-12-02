@@ -25,7 +25,7 @@
     <ClInclude Include="src\Observer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\Globals.h">
+    <ClInclude Include="src\ObserverContext.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\List.h">
@@ -37,6 +37,9 @@
     <ClInclude Include="src\AutoLock.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\ObserverRegistryManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\pch.cpp">
@@ -45,10 +48,10 @@
     <ClCompile Include="src\Observer.cpp">
       <Filter>Driver Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\FastMutex.cpp">
+    <ClCompile Include="src\List.cpp">
       <Filter>Driver Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\List.cpp">
+    <ClCompile Include="src\ObserverRegistryManager.cpp">
       <Filter>Driver Files</Filter>
     </ClCompile>
   </ItemGroup>
