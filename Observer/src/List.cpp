@@ -1,5 +1,4 @@
 #include "pch.h"
-#include <ntddk.h>
 #include "List.h"
 #include "AutoLock.h"
 #include "../../Client/src/ObserverClientInfo.h"

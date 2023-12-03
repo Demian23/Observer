@@ -16,8 +16,6 @@ static ObserverContext observerContext;
 extern "C" NTSTATUS
 DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 {
-	UNREFERENCED_PARAMETER(RegistryPath);
-
 	UNICODE_STRING devName = RTL_CONSTANT_STRING(ObserverDeviceName);
 	UNICODE_STRING symLink = RTL_CONSTANT_STRING(ObserverDeviceSymlink);
 
@@ -42,6 +40,7 @@ DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 			break;
 		}
 		initStage = InitStage::LinkCreated;
+
 		UNICODE_STRING altitude = RTL_CONSTANT_STRING(L"7657.123");
 		status = CmRegisterCallbackEx(OnRegistryNotify, &altitude, DriverObject, nullptr, &observerContext.RegCookie, nullptr);
 		if (!NT_SUCCESS(status)) {
@@ -61,8 +60,6 @@ DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 			[[fallthrough]];
 		case InitStage::DeviceCreated:
 			IoDeleteDevice(DeviceObject);
-			[[fallthrough]];
-		default: break;
 		}
 		return status;
 	}
@@ -73,8 +70,9 @@ DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 	DriverObject->MajorFunction[IRP_MJ_READ] = ObserverRead;
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = ObserverDeviceControl;
 
-	observerContext.RegistryNotifications.Init(10000);
-	observerContext.RegistryManager.Init();
+	NTSTATUS settingsStatus = observerContext.ReadSettingsFromRegistryAndInit(RegistryPath);
+	if(!NT_SUCCESS(settingsStatus))
+		KdPrint((DRIVER_PREFIX "failed to read settings from registry (0x%08X)\n", settingsStatus));
 
 	return status;
 }

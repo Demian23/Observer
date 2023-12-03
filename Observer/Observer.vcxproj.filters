@@ -54,5 +54,8 @@
     <ClCompile Include="src\ObserverRegistryManager.cpp">
       <Filter>Driver Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\ObserverContext.cpp">
+      <Filter>Driver Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

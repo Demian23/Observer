@@ -117,6 +117,7 @@
   <ItemGroup>
     <ClCompile Include="src\List.cpp" />
     <ClCompile Include="src\Observer.cpp" />
+    <ClCompile Include="src\ObserverContext.cpp" />
     <ClCompile Include="src\ObserverRegistryManager.cpp" />
     <ClCompile Include="src\pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>

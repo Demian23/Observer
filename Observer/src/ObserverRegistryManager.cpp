@@ -11,6 +11,23 @@ void ObserverRegistryManager::Init()
 	}
 }
 
+bool ObserverRegistryManager::AddFilterFromKernel(const RegistryFilter filter)
+{
+	AutoLock locker(_mutex);
+
+	int index = FindExistingFilterIndex(&filter.registryRootName);
+	if (index != -1) {
+		RemoveFilter(index);
+	} else {
+		index = FindFreeIndex();
+		if (index == -1)
+			return false;
+	}
+	filtersCount++;
+	filters[index] = filter;
+	return true;
+}
+
 void ObserverRegistryManager::RemoveAllFilters()
 {
 	AutoLock locker(_mutex);
@@ -29,6 +46,7 @@ NTSTATUS ObserverRegistryManager::AddFilter(const ClientRegistryFilter* filter)
 	
 	if (filtersCount == MaxFilters)
 		return STATUS_TOO_MANY_NAMES;
+
 	auto rootKeyName = (PCWSTR)((PUCHAR)filter + sizeof(ClientRegistryFilter));
 
 	int index = FindFilter(rootKeyName);
@@ -40,16 +58,12 @@ NTSTATUS ObserverRegistryManager::AddFilter(const ClientRegistryFilter* filter)
 		if (!buffer) {
 			return STATUS_INSUFFICIENT_RESOURCES;
 		}
-		for (index = 0; index < MaxFilters; index++) {
-			if (!filters[index].allowedNotifications) {
-				filters[index].registryRootName.Buffer = buffer;
-				filters[index].registryRootName.MaximumLength = rootName.Length;
-				RtlCopyUnicodeString(&filters[index].registryRootName, &rootName);
-				filters[index].allowedNotifications = filter->allowedOperations;
-				filtersCount++;
-				break;
-			}
-		}
+		index = FindFreeIndex();
+		filters[index].registryRootName.Buffer = buffer;
+		filters[index].registryRootName.MaximumLength = rootName.Length;
+		RtlCopyUnicodeString(&filters[index].registryRootName, &rootName);
+		filters[index].allowedNotifications = filter->allowedOperations;
+		filtersCount++;
 	}
 	filters[index].allowedNotifications = filter->allowedOperations;
 	return STATUS_SUCCESS;
@@ -59,14 +73,7 @@ bool ObserverRegistryManager::RemoveFilter(PCWSTR rootKeyName)
 {
 	AutoLock locker(_mutex);
 	int filterIndex = FindFilter(rootKeyName);
-	if (filterIndex >= 0) {
-		filters[filterIndex].allowedNotifications = 0;
-		ExFreePool(filters[filterIndex].registryRootName.Buffer);
-		filtersCount--;
-		return true;
-	} else {
-		return false;
-	}
+	return RemoveFilter(filterIndex);
 }
 
 int ObserverRegistryManager::FindFilter(PCWSTR rootKeyName)
@@ -75,13 +82,7 @@ int ObserverRegistryManager::FindFilter(PCWSTR rootKeyName)
 		return -1;
 	UNICODE_STRING strRootKeyName;
 	RtlInitUnicodeString(&strRootKeyName, rootKeyName);
-	for (short i = 0; i < MaxFilters; i++) {
-		if (filters[i].allowedNotifications &&
-			RtlEqualUnicodeString(&strRootKeyName, &filters[i].registryRootName, TRUE)) {
-			return i;
-		}
-	}
-	return -1;
+	return FindExistingFilterIndex(&strRootKeyName);
 }
 
 bool ObserverRegistryManager::Filter(const REG_NOTIFY_CLASS& notification, PCUNICODE_STRING keyName)
@@ -119,4 +120,16 @@ bool ObserverRegistryManager::Filter(const REG_NOTIFY_CLASS& notification, PCUNI
 		}
 	}
 	return false;
+}
+
+bool ObserverRegistryManager::RemoveFilter(int filterIndex)
+{
+	if (filterIndex >= 0) {
+		filters[filterIndex].allowedNotifications = 0;
+		ExFreePool(filters[filterIndex].registryRootName.Buffer);
+		filtersCount--;
+		return true;
+	} else {
+		return false;
+	}
 }

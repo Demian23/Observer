@@ -101,18 +101,7 @@ int main()
     }
 
 	BYTE buffer[1 << 16]{};
-	BYTE filterbuffer[256]{};
 
-	ClientRegistryFilter* filter = (ClientRegistryFilter*)filterbuffer;
-	filter->allowedOperations = (Set | Delete);
-	constexpr WCHAR rootKey[18] = L"\\REGISTRY\\MACHINE";
-	filter->rootKeyNameSizeInBytes = 18 * sizeof(WCHAR);
-	memcpy((PUCHAR)filter + sizeof(ClientRegistryFilter), rootKey,
-		18 * sizeof(WCHAR));
-	if(!DeviceIoControl(hDevice, IOCTL_OBSERVER_ADD_FILTER, filter, 
-		filter->rootKeyNameSizeInBytes + sizeof(ClientRegistryFilter), NULL, 0, NULL, NULL))
-		return Error("Failed to set filter");
-	bool reset = false;
 	while (true) {
 		DWORD bytes;
 		if (!::ReadFile(hDevice, buffer, sizeof(buffer), &bytes, nullptr))
@@ -121,35 +110,8 @@ int main()
 			DisplayInfo(buffer, bytes);
 		else {
 			Sleep(1000);
-			counter++;
 		}
-		
 		::Sleep(200);
-		if(counter == 10){
-			if (!DeviceIoControl(hDevice, IOCTL_OBSERVER_REMOVE_ALL_FILTERS, NULL,
-				NULL, NULL, 0, NULL, NULL))
-				return Error("Failed to remove all filters");
-			else
-				printf("REMOVE ALL FILTERS\n");
-			Sleep(1000);
-			reset = true;
-		} else
-			if (reset) {
-				if(!DeviceIoControl(hDevice, IOCTL_OBSERVER_ADD_FILTER, filter, 
-					filter->rootKeyNameSizeInBytes + sizeof(ClientRegistryFilter), NULL, 0, NULL, NULL))
-					return Error("Failed to set second filter");
-				else
-					printf("SET FILTER in second time\n");
-				counter++;
-				reset = false;
-			}else
-				if (counter == 30) {
-					if(!DeviceIoControl(hDevice, IOCTL_OBSERVER_REMOVE_FILTER, (PVOID)rootKey, 
-						18 * sizeof(WCHAR), NULL, 0, NULL, NULL))
-					return Error("Failed to remove second filter");
-				else
-					printf("Remove FILTER in second time\n");
-				}
 	}
     CloseHandle(hDevice);
 }
