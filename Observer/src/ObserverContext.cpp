@@ -2,11 +2,36 @@
 #include "Observer.h"
 #include "ObserverContext.h"
 
-NTSTATUS ObserverContext::ReadSettingsFromRegistryAndInit(PUNICODE_STRING RegistryPath)
+void ObserverContext::Init()
 {
 	RegistryManager.Init();
+	RegistryNotifications.Init(0xFFFF);
+	RegistryRootPath.Length = RegistryRootPath.MaximumLength = 0;
+	RegistryRootPath.Buffer = nullptr;
+}
+
+NTSTATUS ObserverContext::SetRegistryRootPath(PCUNICODE_STRING path)
+{
+	auto buffer = (PWCH)ExAllocatePool2(POOL_FLAG_PAGED | POOL_FLAG_UNINITIALIZED,
+		path->Length, DRIVER_TAG);
+	if (buffer == nullptr) {
+		return STATUS_NO_MEMORY;
+	}
+	if (RegistryRootPath.Buffer != nullptr)
+		ExFreePool(RegistryRootPath.Buffer);
+	memcpy((PUCHAR)buffer, (PUCHAR)path->Buffer, path->Length);
+	RegistryRootPath.Buffer = buffer;
+	RegistryRootPath.Length = RegistryRootPath.MaximumLength = path->Length;
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS ObserverContext::ReadSettingsFromRegistryAndApply()
+{
+	if (RegistryRootPath.Length == 0) {
+		return STATUS_FAIL_CHECK;
+	}
 	NTSTATUS status;
-	OBJECT_ATTRIBUTES keyAttr = RTL_CONSTANT_OBJECT_ATTRIBUTES(RegistryPath, OBJ_KERNEL_HANDLE);
+	OBJECT_ATTRIBUTES keyAttr = RTL_CONSTANT_OBJECT_ATTRIBUTES(&RegistryRootPath, OBJ_KERNEL_HANDLE);
 	HANDLE hRootKey = nullptr, hSettingsKey = nullptr, hFiltersKey = nullptr;
 	PKEY_VALUE_PARTIAL_INFORMATION filtersNames = nullptr, desiredNotifications = nullptr,
 		notificationsMaxStorageSize = nullptr;
@@ -30,16 +55,20 @@ NTSTATUS ObserverContext::ReadSettingsFromRegistryAndInit(PUNICODE_STRING Regist
 		resourceStage = ResourceAllocationsStages::OpenedSettingsKey;
 
 		UNICODE_STRING valueNotificationsMaxStorageSize = RTL_CONSTANT_STRING(L"MaxNotifications");
-		if (!NT_SUCCESS(ReadKeyValue(hSettingsKey, 
-			&valueNotificationsMaxStorageSize , &notificationsMaxStorageSize))) {
+		if (!NT_SUCCESS(ReadKeyValue(hSettingsKey, &valueNotificationsMaxStorageSize, 
+			&notificationsMaxStorageSize))) {
 			break;
 		}
 		// TODO check value type
 		if (notificationsMaxStorageSize == nullptr) {
 			break;
 		}
-		InitNotificationStorage(notificationsMaxStorageSize);
 
+		if (notificationsMaxStorageSize->Type == REG_DWORD) {
+			RegistryNotifications.SetMaxCount(*(ULONG*)notificationsMaxStorageSize->Data);
+		} else {
+			KdPrint((DRIVER_PREFIX"Wrong registry parameter (max storage size) type\n"));
+		}
 
 		UNICODE_STRING strFiltersKey = RTL_CONSTANT_STRING(L"RegistryFilters");
 		if (!TryOpenExistingKey(hSettingsKey, &strFiltersKey, &hFiltersKey)) {
@@ -92,17 +121,6 @@ NTSTATUS ObserverContext::ReadSettingsFromRegistryAndInit(PUNICODE_STRING Regist
 		ZwClose(hRootKey);
 	}
 	return status;
-}
-
-void ObserverContext::InitNotificationStorage(PKEY_VALUE_PARTIAL_INFORMATION maxStorageSize)
-{ 
-	ULONG size = 0xFFFF;
-	if (maxStorageSize->Type == REG_DWORD) {
-		size = *(ULONG*)maxStorageSize->Data;
-	} else {
-		KdPrint((DRIVER_PREFIX"Wrong registry parameter (max storage size) type\n"));
-	}
-	RegistryNotifications.Init(size);
 }
 
 bool ObserverContext::TryOpenExistingKey(HANDLE root, PUNICODE_STRING subkeyName, 

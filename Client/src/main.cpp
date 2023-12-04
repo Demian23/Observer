@@ -92,7 +92,7 @@ void DisplayInfo(BYTE* buffer, DWORD size)
 
 }
 
-int main()
+int main(int argc)
 {
     HANDLE hDevice = CreateFile(L"\\\\.\\Observer", GENERIC_READ | GENERIC_WRITE,
         0, nullptr, OPEN_EXISTING, 0, nullptr); 
@@ -101,7 +101,10 @@ int main()
     }
 
 	BYTE buffer[1 << 16]{};
-
+	if (argc == 2) {
+		if (!DeviceIoControl(hDevice, IOCTL_OBSERVER_UPDATE_FROM_REGISTRY, NULL, 0, NULL, 0, NULL, NULL))
+			return Error("Failed to updated settings");
+	}
 	while (true) {
 		DWORD bytes;
 		if (!::ReadFile(hDevice, buffer, sizeof(buffer), &bytes, nullptr))

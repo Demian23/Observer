@@ -7,11 +7,14 @@ struct ObserverContext final{
 	List RegistryNotifications;
 	ObserverRegistryManager RegistryManager;
 	LARGE_INTEGER RegCookie;
+	UNICODE_STRING RegistryRootPath;
 
-	NTSTATUS ReadSettingsFromRegistryAndInit(PUNICODE_STRING RegistryPath);
+	void Init();
+	NTSTATUS SetRegistryRootPath(PCUNICODE_STRING path);
+	NTSTATUS ReadSettingsFromRegistryAndApply();
+
 private:
 	bool TryOpenExistingKey(HANDLE root, PUNICODE_STRING subkeyName, PHANDLE result);
-	void InitNotificationStorage(PKEY_VALUE_PARTIAL_INFORMATION maxStorageSize);
 	NTSTATUS ReadKeyValue(HANDLE key, PUNICODE_STRING valueName,
 		PKEY_VALUE_PARTIAL_INFORMATION* value);
 	NTSTATUS SetFiltersFromRegistry(PKEY_VALUE_PARTIAL_INFORMATION names,

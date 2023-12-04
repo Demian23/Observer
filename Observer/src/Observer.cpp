@@ -70,10 +70,12 @@ DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 	DriverObject->MajorFunction[IRP_MJ_READ] = ObserverRead;
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = ObserverDeviceControl;
 
-	NTSTATUS settingsStatus = observerContext.ReadSettingsFromRegistryAndInit(RegistryPath);
-	if(!NT_SUCCESS(settingsStatus))
-		KdPrint((DRIVER_PREFIX "failed to read settings from registry (0x%08X)\n", settingsStatus));
-
+	observerContext.Init();
+	if (NT_SUCCESS(observerContext.SetRegistryRootPath(RegistryPath))) {
+		NTSTATUS settingsStatus = observerContext.ReadSettingsFromRegistryAndApply();
+		if (!NT_SUCCESS(settingsStatus))
+			KdPrint((DRIVER_PREFIX "failed to read settings from registry (0x%08X)\n", settingsStatus));
+	}
 	return status;
 }
 
@@ -351,6 +353,9 @@ NTSTATUS ObserverDeviceControl(PDEVICE_OBJECT, PIRP Irp)
 	case IOCTL_OBSERVER_REMOVE_ALL_FILTERS:
 		observerContext.RegistryManager.RemoveAllFilters();
 		status = STATUS_SUCCESS;
+		break;
+	case IOCTL_OBSERVER_UPDATE_FROM_REGISTRY:
+		status = observerContext.ReadSettingsFromRegistryAndApply();
 		break;
 	}
 	return CompleteIrp(Irp, status);

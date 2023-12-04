@@ -11,6 +11,7 @@ struct FullItem{
 class List final {
 public: 
 	void Init(ULONG _maxCount);
+	void SetMaxCount(ULONG newCount);
 	void AddItem(LIST_ENTRY* item);
 	LIST_ENTRY* RemoveItem();
 private:

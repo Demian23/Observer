@@ -7,6 +7,8 @@
 // pass reg key name (PCWSTR) through buffer
 #define IOCTL_OBSERVER_REMOVE_FILTER CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+#define IOCTL_OBSERVER_UPDATE_FROM_REGISTRY CTL_CODE(0x8000, 0x803, METHOD_NEITHER, FILE_ANY_ACCESS)
+
 enum RegistryOperationTypes{Create = 1, Set = 2, Delete = 4, All = 8, None = 16};
 
 // keyName should be stored on offset sizeof(ClientRegistryFilter)

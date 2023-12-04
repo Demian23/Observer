@@ -33,3 +33,20 @@ LIST_ENTRY* List::RemoveItem()
 	count--;
 	return item;
 }
+
+void List::SetMaxCount(ULONG newCount)
+{
+	AutoLock locker(lock);
+	if (newCount > 0) {
+		if (count > newCount) {
+			auto deleteCount = count - newCount;
+			while (deleteCount--) {
+				auto itemForDelete = RemoveItem();
+				auto allocatedStructure = 
+					CONTAINING_RECORD(itemForDelete, FullItem<ItemHeader>, Entry);
+				ExFreePool(allocatedStructure);
+			}
+		}
+		maxCount = newCount;
+	}
+}
