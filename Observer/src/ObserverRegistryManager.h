@@ -20,11 +20,12 @@ struct RegistryFilter final {
 	NTSTATUS AddFilter(const ClientRegistryFilter* filter);
 	bool AddFilterFromKernel(const RegistryFilter filter);
 	bool Filter(const REG_NOTIFY_CLASS& notification, PCUNICODE_STRING keyName);
+	void Dispose();
 private:
 	enum{MaxFilters = 16};
 	RegistryFilter filters[MaxFilters];
-	USHORT filtersCount;
 	FastMutex _mutex;
+	USHORT filtersCount;
 
 	bool RemoveFilter(int index);
 	inline int FindFreeIndex()const

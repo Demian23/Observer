@@ -4,10 +4,11 @@
 #include "ObserverRegistryManager.h"
 
 struct ObserverContext final{
-	List RegistryNotifications;
 	ObserverRegistryManager RegistryManager;
-	LARGE_INTEGER RegCookie;
 	UNICODE_STRING RegistryRootPath;
+	LARGE_INTEGER RegCookie;
+	PDEVICE_OBJECT DeviceObject;
+	List ObservedEvents;
 
 	void Init();
 	NTSTATUS SetRegistryRootPath(PCUNICODE_STRING path);

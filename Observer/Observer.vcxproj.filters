@@ -40,6 +40,15 @@
     <ClInclude Include="src\ObserverRegistryManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\ObserverFSFilter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\FileNameInfo.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Mutex.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\pch.cpp">
@@ -55,6 +64,9 @@
       <Filter>Driver Files</Filter>
     </ClCompile>
     <ClCompile Include="src\ObserverContext.cpp">
+      <Filter>Driver Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ObserverFSFilter.cpp">
       <Filter>Driver Files</Filter>
     </ClCompile>
   </ItemGroup>

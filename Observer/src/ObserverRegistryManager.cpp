@@ -1,6 +1,5 @@
 #include "pch.h"
 #include "AutoLock.h"
-#include "Observer.h"
 #include "ObserverRegistryManager.h"
 
 void ObserverRegistryManager::Init()
@@ -131,5 +130,13 @@ bool ObserverRegistryManager::RemoveFilter(int filterIndex)
 		return true;
 	} else {
 		return false;
+	}
+}
+
+void ObserverRegistryManager::Dispose()
+{
+	for (short i = 0; i < MaxFilters; i++) {
+		if (filters[i].allowedNotifications)
+			ExFreePool(filters[i].registryRootName.Buffer);
 	}
 }

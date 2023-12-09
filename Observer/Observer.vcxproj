@@ -89,6 +89,9 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>fltmgr.lib%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)wmilib.lib</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <DriverSign>
@@ -101,6 +104,9 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>fltmgr.lib%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)wmilib.lib</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <FilesToPackage Include="$(TargetPath)" />
@@ -108,7 +114,10 @@
   <ItemGroup>
     <ClInclude Include="src\AutoLock.h" />
     <ClInclude Include="src\FastMutex.h" />
+    <ClInclude Include="src\FileNameInfo.h" />
     <ClInclude Include="src\List.h" />
+    <ClInclude Include="src\Mutex.h" />
+    <ClInclude Include="src\ObserverFSFilter.h" />
     <ClInclude Include="src\ObserverContext.h" />
     <ClInclude Include="src\Observer.h" />
     <ClInclude Include="src\ObserverRegistryManager.h" />
@@ -116,6 +125,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\List.cpp" />
+    <ClCompile Include="src\ObserverFSFilter.cpp" />
     <ClCompile Include="src\Observer.cpp" />
     <ClCompile Include="src\ObserverContext.cpp" />
     <ClCompile Include="src\ObserverRegistryManager.cpp" />

@@ -1,11 +1,9 @@
 #include "pch.h"
-#include "Observer.h"
-#include "ObserverContext.h"
 
 void ObserverContext::Init()
 {
 	RegistryManager.Init();
-	RegistryNotifications.Init(0xFFFF);
+	ObservedEvents.Init(0xFFFF);
 	RegistryRootPath.Length = RegistryRootPath.MaximumLength = 0;
 	RegistryRootPath.Buffer = nullptr;
 }
@@ -65,7 +63,7 @@ NTSTATUS ObserverContext::ReadSettingsFromRegistryAndApply()
 		}
 
 		if (notificationsMaxStorageSize->Type == REG_DWORD) {
-			RegistryNotifications.SetMaxCount(*(ULONG*)notificationsMaxStorageSize->Data);
+			ObservedEvents.SetMaxCount(*(ULONG*)notificationsMaxStorageSize->Data);
 		} else {
 			KdPrint((DRIVER_PREFIX"Wrong registry parameter (max storage size) type\n"));
 		}

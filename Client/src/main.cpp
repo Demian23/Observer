@@ -82,6 +82,23 @@ void DisplayInfo(BYTE* buffer, DWORD size)
 				(PCWSTR)((PBYTE)info + info->keyNameOffset));
 			break;
 		}
+		case ItemType::FileSystemOpenFile: {
+			auto info = reinterpret_cast<FileOpen*>(buffer);
+			printf("File %ws opened, PID=%u, TID=%u\n", (PCWSTR)((PBYTE)info + info->fileNameOffset), info->processId, info->threadId);
+			break;
+		}
+		case ItemType::FileSystemWriteFile: {
+			auto info = reinterpret_cast<FileWrite*>(buffer);
+			printf("File %ws written=%lu, op. number:%u PID=%u, TID=%u\n", (PCWSTR)((PBYTE)info + info->fileNameOffset), 
+				info->bytesWritten,info->writeOperationCount, info->processId, info->threadId);
+			break;
+		}
+		case ItemType::FileSystemCleanupFile: {
+			auto info = reinterpret_cast<FileCleanup*>(buffer);
+			printf("File %ws closed, writes=%lu, PID=%u, TID=%u\n", (PCWSTR)((PBYTE)info + info->fileNameOffset), 
+				info->writesAmount,info->processId, info->threadId);
+			break;
+		}
 		default:
 			printf("No such type: %d, bytes: %d\n", header->type, size);
 			break;

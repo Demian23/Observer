@@ -23,7 +23,10 @@ enum class ItemType : short {
 	RegistrySetValue,
 	RegistryCreateKey,
 	RegistryDeleteKey, 
-	RegistryDeleteValue
+	RegistryDeleteValue,
+	FileSystemOpenFile,
+	FileSystemWriteFile,
+	FileSystemCleanupFile
 };
 
 struct ItemHeader {
@@ -55,3 +58,20 @@ struct RegistryCreateKey : RegistryKey {
 
 using RegistryDeleteValue = RegistryValue;
 using RegistryDeleteKey = RegistryKey;
+
+struct FileEvent : ItemHeader{
+	ULONG processId;
+	ULONG threadId;
+	USHORT fileNameOffset;
+};
+
+using FileOpen = FileEvent;
+
+struct FileWrite : FileEvent {
+	ULONG writeOperationCount;
+	ULONG bytesWritten;
+};
+
+struct FileCleanup : FileEvent {
+	ULONG writesAmount;
+};
