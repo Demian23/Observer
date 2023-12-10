@@ -1,0 +1,3 @@
+HKLM\SYSTEM\ControlSet001\Services\observer\Settings MaxNotifications 32678 dw
+HKLM\SYSTEM\ControlSet001\Services\observer\Settings\RegistryFilters FilteredKeys \REGISTRY\MACHINE\;\REGISTRY\USER\; sz
+HKLM\SYSTEM\ControlSet001\Services\observer\Settings\RegistryFilters DesiredNotifications 08,04 b

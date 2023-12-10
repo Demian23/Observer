@@ -6,6 +6,7 @@ void ObserverContext::Init()
 	ObservedEvents.Init(0xFFFF);
 	RegistryRootPath.Length = RegistryRootPath.MaximumLength = 0;
 	RegistryRootPath.Buffer = nullptr;
+	processTable.Init();
 }
 
 NTSTATUS ObserverContext::SetRegistryRootPath(PCUNICODE_STRING path)

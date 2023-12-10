@@ -1,6 +1,8 @@
 #pragma once
 
 #include "List.h"
+#include "Table.h"
+#include "File.h"
 #include "ObserverRegistryManager.h"
 
 struct ObserverContext final{
@@ -9,6 +11,7 @@ struct ObserverContext final{
 	LARGE_INTEGER RegCookie;
 	PDEVICE_OBJECT DeviceObject;
 	List ObservedEvents;
+	Table<File, ULONG, TableFileCompare> processTable;
 
 	void Init();
 	NTSTATUS SetRegistryRootPath(PCUNICODE_STRING path);

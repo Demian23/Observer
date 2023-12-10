@@ -38,12 +38,7 @@ static VOID ObserverInstanceTeardownComplete(
 static PFLT_FILTER filter;
 
 // TODO Make decision what to store here
-struct FileContext {
-	enum { filenameBufferSize = 256}; 
-	volatile LONG64 writeCounter;
-	USHORT filenameSize;
-	WCHAR filename[filenameBufferSize];
-};
+struct FileContext { ULONG filekey; };
 
 NTSTATUS ObserverFSFilterInit(PDRIVER_OBJECT DriverObject, PUNICODE_STRING regPath)
 {
@@ -179,12 +174,12 @@ NTSTATUS ObserverUnload(_In_ FLT_FILTER_UNLOAD_FLAGS)
 
 	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\Observer");
 	observerContext.RegistryManager.Dispose();
+	observerContext.processTable.Dispose();
 	if (observerContext.RegistryRootPath.Length)
 		ExFreePool(observerContext.RegistryRootPath.Buffer);
 	CmUnRegisterCallback(observerContext.RegCookie);
 	IoDeleteSymbolicLink(&symLink);
 	IoDeleteDevice(observerContext.DeviceObject);
-
 	FltUnregisterFilter(filter);
 	return STATUS_SUCCESS;
 }
@@ -231,7 +226,7 @@ FLT_POSTOP_CALLBACK_STATUS OnPostCreate(_Inout_ PFLT_CALLBACK_DATA Data, _In_ PC
 	if (!name || name->Stream.Length > 0)
 		return FLT_POSTOP_FINISHED_PROCESSING;
 
-	FileContext* fileContext, *oldContext;
+	FileContext *fileContext, *oldContext;
 	auto status = FltAllocateContext(FltObjects->Filter, FLT_FILE_CONTEXT,
 		sizeof(FileContext), PagedPool, (PFLT_CONTEXT*)&fileContext);
 	if (!NT_SUCCESS(status)) {
@@ -239,10 +234,7 @@ FLT_POSTOP_CALLBACK_STATUS OnPostCreate(_Inout_ PFLT_CALLBACK_DATA Data, _In_ PC
 		return FLT_POSTOP_FINISHED_PROCESSING;
 	}
 
-	fileContext->writeCounter = 0;
-	fileContext->filenameSize = FileContext::filenameBufferSize > name->Name.Length/sizeof(WCHAR) ?
-		name->Name.Length/sizeof(WCHAR) : FileContext::filenameBufferSize;
-	memcpy_s(fileContext->filename, fileContext->filenameSize * sizeof(WCHAR), name->Name.Buffer, name->Name.Length);
+	RtlHashUnicodeString(&name->Name, TRUE, HASH_STRING_ALGORITHM_DEFAULT, &fileContext->filekey);
 
 	status = FltSetFileContext(FltObjects->Instance,
 		FltObjects->FileObject,
@@ -257,10 +249,10 @@ FLT_POSTOP_CALLBACK_STATUS OnPostCreate(_Inout_ PFLT_CALLBACK_DATA Data, _In_ PC
 	}
 
 	FltReleaseContext(fileContext);
-	
-	// TODO get current process name for all events
-	USHORT nameSize = fileContext->filenameSize + 1;
-	USHORT size = sizeof(FileOpen) + (nameSize)*sizeof(WCHAR);
+
+
+	USHORT nameSize = name->Name.Length + sizeof(WCHAR);
+	USHORT size = sizeof(FileOpen) + (nameSize);
 	auto newEvent = static_cast<FullItem<FileOpen>*>(ExAllocatePool2(POOL_FLAG_PAGED, size + sizeof(LIST_ENTRY), DRIVER_TAG));
 	if (newEvent) {
 		auto& eventInfo = newEvent->Data;
@@ -272,10 +264,20 @@ FLT_POSTOP_CALLBACK_STATUS OnPostCreate(_Inout_ PFLT_CALLBACK_DATA Data, _In_ PC
 		eventInfo.fileNameOffset = sizeof(FileOpen);
 		wcsncpy_s((PWSTR)((PUCHAR)&eventInfo + sizeof(FileOpen)), 
 			nameSize, 
-			fileContext->filename, fileContext->filenameSize);
+			name->Name.Buffer, name->Name.Length);
 		observerContext.ObservedEvents.AddItem(&newEvent->Entry);
 	} else {
 		KdPrint(("Failed to allocate list item\n"));
+	}
+
+	if (!observerContext.processTable.IsKeyPresented(fileContext->filekey)) {
+		char buffer[1024]{};
+		File* file = (File*)&buffer;
+		file->key = fileContext->filekey;
+		file->fileNameSize = 1024 > name->Name.Length / sizeof(WCHAR) ? name->Name.Length : 1024;
+		file->fileNameOffset = sizeof(File);
+		memcpy_s(buffer + sizeof(File), file->fileNameSize, name->Name.Buffer, name->Name.Length);
+		observerContext.processTable.Insert(file, sizeof(File) + file->fileNameSize);
 	}
 	if (oldContext != nullptr)
 		FltReleaseContext(oldContext);
@@ -303,11 +305,15 @@ FLT_POSTOP_CALLBACK_STATUS OnPostWrite(_Inout_ PFLT_CALLBACK_DATA Data, _In_ PCF
 		|| Data->IoStatus.Status != STATUS_SUCCESS || contextFromPre == nullptr)
 		return FLT_POSTOP_FINISHED_PROCESSING;
 
-	FileContext* fileContext = static_cast<FileContext*>(contextFromPre);
-	InterlockedIncrement64(&fileContext->writeCounter);
-	
-	USHORT nameSize = fileContext->filenameSize + 1;
-	USHORT size = static_cast<USHORT>(sizeof(FileWrite) + (nameSize) *sizeof(WCHAR));
+	File* file = observerContext.processTable.Get(((FileContext*)contextFromPre)->filekey);
+	if (!file) {
+		return FLT_POSTOP_FINISHED_PROCESSING;
+	}
+
+	InterlockedIncrement64(&file->writesAmount);
+
+	USHORT nameSize = file->fileNameSize + sizeof(WCHAR);
+	USHORT size = static_cast<USHORT>(sizeof(FileWrite) + nameSize);
 	auto newEvent = static_cast<FullItem<FileWrite>*>(ExAllocatePool2(POOL_FLAG_PAGED, size+ sizeof(LIST_ENTRY), DRIVER_TAG));
 	if (newEvent) {
 		auto& eventInfo = newEvent->Data;
@@ -318,15 +324,15 @@ FLT_POSTOP_CALLBACK_STATUS OnPostWrite(_Inout_ PFLT_CALLBACK_DATA Data, _In_ PCF
 		eventInfo.threadId = HandleToULong(PsGetCurrentThreadId());
 		eventInfo.bytesWritten = Data->Iopb->Parameters.Write.Length;
 		eventInfo.fileNameOffset = sizeof(FileWrite);
-		eventInfo.writeOperationCount = static_cast<ULONG>(fileContext->writeCounter);
+		eventInfo.writeOperationCount = static_cast<ULONG>(file->writesAmount);
 		wcsncpy_s((PWSTR)((PUCHAR)&eventInfo + sizeof(FileWrite)), 
 			nameSize, 
-			fileContext->filename, fileContext->filenameSize);
+			(PWSTR)((PUCHAR)file + file->fileNameOffset), file->fileNameSize/sizeof(WCHAR));
 		observerContext.ObservedEvents.AddItem(&newEvent->Entry);
 	} else {
 		KdPrint(("Failed to allocate list item\n"));
 	}
-	FltReleaseContext(fileContext);
+	FltReleaseContext(contextFromPre);
 	return FLT_POSTOP_FINISHED_PROCESSING;
 }
 
