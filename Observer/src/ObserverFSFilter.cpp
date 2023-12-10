@@ -226,7 +226,10 @@ FLT_POSTOP_CALLBACK_STATUS OnPostCreate(_Inout_ PFLT_CALLBACK_DATA Data, _In_ PC
 	if (!name || name->Stream.Length > 0)
 		return FLT_POSTOP_FINISHED_PROCESSING;
 
-	FileContext *fileContext, *oldContext;
+	if(!observerContext.RegistryManager.FilterFS(&name->Name))
+		return FLT_POSTOP_FINISHED_PROCESSING;
+
+	FileContext* fileContext, *oldContext;
 	auto status = FltAllocateContext(FltObjects->Filter, FLT_FILE_CONTEXT,
 		sizeof(FileContext), PagedPool, (PFLT_CONTEXT*)&fileContext);
 	if (!NT_SUCCESS(status)) {

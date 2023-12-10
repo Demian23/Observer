@@ -5,8 +5,32 @@
 void ObserverRegistryManager::Init()
 {
 	_mutex.Init();
+	_fsMutex.Init();
 	for(short i = 0; i < MaxFilters; i++){
 		filters[i].allowedNotifications = 0;
+	}
+	for(short i = 0; i < MaxFilters; i++){
+		fsFilters[i].fileNameRoot.Length = fsFilters[i].fileNameRoot.MaximumLength = 0;
+	}
+	fsFiltersCount = filtersCount = 0;
+}
+
+bool ObserverRegistryManager::AddFSFilterFromKernel(const FilesystemFilter filter)
+{
+	AutoLock locker(_fsMutex);
+	if (fsFiltersCount >= MaxFilters)
+		return false;
+
+	short i;
+	for (i = 0; i < MaxFilters; i++)
+		if (!fsFilters[i].fileNameRoot.Length)
+			break;
+	if (i != MaxFilters) {
+		fsFilters[i] = filter;
+		fsFiltersCount++;
+		return true;
+	} else {
+		return false;
 	}
 }
 
@@ -84,6 +108,23 @@ int ObserverRegistryManager::FindFilter(PCWSTR rootKeyName)
 	return FindExistingFilterIndex(&strRootKeyName);
 }
 
+bool ObserverRegistryManager::FilterFS(PCUNICODE_STRING fileName)
+{
+	AutoLock locker(_fsMutex);
+
+	if (!fsFiltersCount)
+		return true;
+	for(short i = 0; i < MaxFilters; i++)
+		if (fsFilters[i].fileNameRoot.Length &&
+			fileName->Length >= filters[i].registryRootName.Length &&
+			memcmp(fsFilters[i].fileNameRoot.Buffer, fileName->Buffer,
+				fsFilters[i].fileNameRoot.Length) == 0) 
+		{
+			return false;
+		}
+	return true;
+}
+
 bool ObserverRegistryManager::Filter(const REG_NOTIFY_CLASS& notification, PCUNICODE_STRING keyName)
 {
 	AutoLock locker(_mutex);
@@ -135,8 +176,13 @@ bool ObserverRegistryManager::RemoveFilter(int filterIndex)
 
 void ObserverRegistryManager::Dispose()
 {
+	// lock?
 	for (short i = 0; i < MaxFilters; i++) {
 		if (filters[i].allowedNotifications)
 			ExFreePool(filters[i].registryRootName.Buffer);
+	}
+	for (short i = 0; i < MaxFilters; i++) {
+		if (fsFilters[i].fileNameRoot.Length)
+			ExFreePool(fsFilters[i].fileNameRoot.Buffer);
 	}
 }

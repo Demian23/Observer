@@ -13,19 +13,29 @@ struct RegistryFilter final {
 	UNICODE_STRING registryRootName;
 };
 
+struct FilesystemFilter final {
+	UNICODE_STRING fileNameRoot;
+};
+
 	void Init();
 	void RemoveAllFilters();
 	int FindFilter(PCWSTR filteredRootName);
 	bool RemoveFilter(PCWSTR filteredRootName);
 	NTSTATUS AddFilter(const ClientRegistryFilter* filter);
 	bool AddFilterFromKernel(const RegistryFilter filter);
+	bool AddFSFilterFromKernel(const FilesystemFilter filter);
 	bool Filter(const REG_NOTIFY_CLASS& notification, PCUNICODE_STRING keyName);
+	bool FilterFS(PCUNICODE_STRING fileName);
 	void Dispose();
 private:
 	enum{MaxFilters = 16};
 	RegistryFilter filters[MaxFilters];
 	FastMutex _mutex;
 	USHORT filtersCount;
+
+	FilesystemFilter fsFilters[MaxFilters];
+	FastMutex _fsMutex;
+	USHORT fsFiltersCount;
 
 	bool RemoveFilter(int index);
 	inline int FindFreeIndex()const

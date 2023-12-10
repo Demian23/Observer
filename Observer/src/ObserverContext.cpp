@@ -33,10 +33,10 @@ NTSTATUS ObserverContext::ReadSettingsFromRegistryAndApply()
 	OBJECT_ATTRIBUTES keyAttr = RTL_CONSTANT_OBJECT_ATTRIBUTES(&RegistryRootPath, OBJ_KERNEL_HANDLE);
 	HANDLE hRootKey = nullptr, hSettingsKey = nullptr, hFiltersKey = nullptr;
 	PKEY_VALUE_PARTIAL_INFORMATION filtersNames = nullptr, desiredNotifications = nullptr,
-		notificationsMaxStorageSize = nullptr;
+		notificationsMaxStorageSize = nullptr, fsFilters = nullptr;
 	enum class ResourceAllocationsStages {None, OpenedRootKey, OpenedSettingsKey,
 		NotificatinStorageMaxSizeAllocated, OpenedFiltersKey, 
-		FiltersNamesAllocated, DesiredNotificationsAllocated} 
+		FiltersNamesAllocated, DesiredNotificationsAllocated, FSFiltersAllocated} 
 		resourceStage = ResourceAllocationsStages::None;
 	do{
 		status = ZwOpenKey(&hRootKey, KEY_WRITE, &keyAttr);
@@ -97,10 +97,22 @@ NTSTATUS ObserverContext::ReadSettingsFromRegistryAndApply()
 		}
 		resourceStage = ResourceAllocationsStages::DesiredNotificationsAllocated;
 
-		status = SetFiltersFromRegistry(filtersNames, desiredNotifications);
+		UNICODE_STRING valueFsFilters = RTL_CONSTANT_STRING(L"FilesystemFilters");
+		if (!NT_SUCCESS(ReadKeyValue(hFiltersKey, &valueFsFilters, &fsFilters))) {
+			break;
+		}
+		if (fsFilters== nullptr) {
+			break;
+		}
+		resourceStage = ResourceAllocationsStages::FSFiltersAllocated;
+
+		status = SetFiltersFromRegistry(filtersNames, desiredNotifications, fsFilters);
 	} while (false);
 	
 	switch (resourceStage) {
+	case ResourceAllocationsStages::FSFiltersAllocated:
+		ExFreePool(fsFilters);
+		[[fallthrough]];
 	case ResourceAllocationsStages::DesiredNotificationsAllocated:
 		ExFreePool(desiredNotifications);
 		[[fallthrough]];
@@ -185,13 +197,13 @@ bool ObserverContext::TryOpenExistingKey(HANDLE root, PUNICODE_STRING subkeyName
 }
 
  NTSTATUS ObserverContext::SetFiltersFromRegistry(PKEY_VALUE_PARTIAL_INFORMATION names,
-	 PKEY_VALUE_PARTIAL_INFORMATION accesses)
+	 PKEY_VALUE_PARTIAL_INFORMATION accesses, PKEY_VALUE_PARTIAL_INFORMATION fsFilters)
  {
 	 NTSTATUS status = STATUS_SUCCESS;
-	 if (names->Type == REG_SZ && accesses->Type == REG_BINARY) {
+	 if (names->Type == REG_SZ && accesses->Type == REG_BINARY && fsFilters->Type == REG_SZ) {
 		 constexpr WCHAR keyNamesDelimeter = L';';
 		 ULONG amountOfFiltersNames = 0;
-		 PCWSTR strNames = (PCWSTR)names->Data, tempPtr;
+		 PCWSTR strNames = (PCWSTR)names->Data, tempPtr, strFSFilters = (PCWSTR)fsFilters->Data;
 		 PUCHAR bytesAccesses = accesses->Data;
 		 while ((tempPtr = wcschr(strNames, keyNamesDelimeter)) != nullptr) {
 			 strNames = tempPtr + 1;
@@ -221,6 +233,27 @@ bool ObserverContext::TryOpenExistingKey(HANDLE root, PUNICODE_STRING subkeyName
 						 nameLenInBytes);
 
 					 RegistryManager.AddFilterFromKernel(filter);
+					 newKeyNameFirstSymbol = offset + 1;
+				 }
+			 }
+
+			 for (USHORT offset = 0, newKeyNameFirstSymbol = 0;
+				 strFSFilters[offset]; offset++) {
+				 if (strFSFilters[offset] == keyNamesDelimeter) {
+					 USHORT nameLenInBytes = (offset - newKeyNameFirstSymbol) * sizeof(WCHAR);
+					 PWCHAR name = (PWCHAR)ExAllocatePool2(POOL_FLAG_PAGED,
+						 nameLenInBytes, DRIVER_TAG);
+					 if (name == nullptr) {
+						 KdPrint((DRIVER_PREFIX"Failed allocate name (0x%08X)\n", status));
+						 status = STATUS_NO_MEMORY;
+						 break;
+					 }
+
+					 ObserverRegistryManager::FilesystemFilter filter{ {0, 0, name} };
+					 memcpy((PUCHAR)name, (PUCHAR)(strFSFilters + newKeyNameFirstSymbol),
+						 nameLenInBytes);
+
+					 RegistryManager.AddFSFilterFromKernel(filter);
 					 newKeyNameFirstSymbol = offset + 1;
 				 }
 			 }
